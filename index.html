@@ -3,7 +3,8 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+    <!-- <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"> -->
     <title>Ledger — Trading Journal</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -95,6 +96,7 @@
             <button class="active" data-tab="calendar" type="button">Calendar</button>
             <button data-tab="trades" type="button">Trades</button>
             <button data-tab="transactions" type="button">Transactions</button>
+            <button data-tab="analytics" type="button">Analytics</button>
             <button data-tab="audit" type="button">Audit log</button>
         </nav>
 
@@ -134,6 +136,71 @@
                 <button class="btn primary" data-open="tx" type="button">+ Add transaction</button>
             </div>
             <div class="tx-list" id="txList"></div>
+        </section>
+
+        <!-- ANALYTICS -->
+        <section class="panel" id="panel-analytics">
+            <div class="panel-head">
+                <h2>Analytics</h2>
+                <span style="font-size:12px; color:var(--text-faint);">Based on all logged trades</span>
+            </div>
+
+            <!-- KPI strip -->
+            <div class="an-kpi-row" id="anKpiRow"></div>
+
+            <!-- Charts grid -->
+            <div class="an-grid">
+
+                <!-- Equity curve (full width) -->
+                <div class="an-card wide">
+                    <div class="an-card-head">
+                        <span class="an-card-title">Equity curve</span>
+                        <span class="an-card-sub" id="anEquitySub">Running P/L over time</span>
+                    </div>
+                    <div class="an-chart-wrap" style="height:200px;">
+                        <canvas id="anEquityCanvas"></canvas>
+                    </div>
+                </div>
+
+                <!-- P/L by weekday -->
+                <div class="an-card">
+                    <div class="an-card-head">
+                        <span class="an-card-title">P/L by day of week</span>
+                        <span class="an-card-sub">Where you win and lose most</span>
+                    </div>
+                    <div class="an-chart-wrap" style="height:180px;">
+                        <canvas id="anDowCanvas"></canvas>
+                    </div>
+                </div>
+
+                <!-- Avg win vs avg loss -->
+                <div class="an-card">
+                    <div class="an-card-head">
+                        <span class="an-card-title">Avg win vs avg loss</span>
+                        <span class="an-card-sub" id="anRRSub">Risk/reward snapshot</span>
+                    </div>
+                    <div class="an-rr" id="anRR"></div>
+                </div>
+
+                <!-- Symbol breakdown -->
+                <div class="an-card">
+                    <div class="an-card-head">
+                        <span class="an-card-title">Symbol breakdown</span>
+                        <span class="an-card-sub">P/L and count per pair</span>
+                    </div>
+                    <div class="an-symbol-list" id="anSymbolList"></div>
+                </div>
+
+                <!-- Best & worst -->
+                <div class="an-card">
+                    <div class="an-card-head">
+                        <span class="an-card-title">Best &amp; worst trades</span>
+                        <span class="an-card-sub">Extremes from your journal</span>
+                    </div>
+                    <div id="anBestWorst"></div>
+                </div>
+
+            </div>
         </section>
 
         <!-- AUDIT LOG -->
