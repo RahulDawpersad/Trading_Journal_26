@@ -80,6 +80,8 @@
         var next = isDarkActive() ? "light" : "dark";
         applyTheme(next);
         try { localStorage.setItem(THEME_KEY, next); } catch (e) { }
+        // Re-render charts with new theme colours
+        renderAnalytics();
     });
 
     /* ---------- Client tag persistence ---------- */
@@ -102,6 +104,10 @@
             btn.classList.add("active");
             document.querySelectorAll(".panel").forEach(function (p) { p.classList.remove("active"); });
             document.getElementById("panel-" + btn.dataset.tab).classList.add("active");
+            // Render analytics when tab is activated (canvas needs to be visible for sizing)
+            if (btn.dataset.tab === "analytics") {
+                setTimeout(renderAnalytics, 0);
+            }
         });
     });
 
@@ -489,8 +495,8 @@
     }
 
     /* ---------- Mobile sliding week swiper ---------- */
-    var swipeMoved = false;        // suppress click after a drag
-    var swipeAnimating = false;    // ignore new touches during the settle animation
+    var swipeMoved = false;
+    var swipeAnimating = false;
 
     function renderWeekStrip(year, month) {
         var byDate = tradesByDate();
@@ -511,11 +517,9 @@
             buildWeekPageHtml(selectedWeekStart, byDate, txDate, todayStr) +
             buildWeekPageHtml(nextMon, byDate, txDate, todayStr);
 
-        // Reset to centre page without animation
         track.classList.remove("animate");
         track.style.transform = "translateX(-33.3333%)";
 
-        // Bind day clicks on all three pages
         track.querySelectorAll(".week-day").forEach(function (btn) {
             btn.addEventListener("click", function () {
                 if (swipeMoved || swipeAnimating) return;
@@ -525,7 +529,6 @@
             });
         });
 
-        // Auto-select: today if in centre week, else first active, else Monday
         var todayInWeek = null;
         var firstActive = null;
         for (var k = 0; k < 7; k++) {
@@ -545,7 +548,6 @@
     }
 
     function buildWeekPageHtml(monday, byDate, txDate, todayStr) {
-        // Relative bar scale within this week
         var maxAbs = 0;
         for (var i = 0; i < 7; i++) {
             var dt = new Date(monday); dt.setDate(dt.getDate() + i);
@@ -641,9 +643,7 @@
         document.getElementById("weekDetail").innerHTML = html;
     }
 
-    /* Commit a week change after the slide finishes */
     function commitWeekChange(direction) {
-        // direction: -1 = previous week, +1 = next week
         selectedWeekStart = new Date(selectedWeekStart);
         selectedWeekStart.setDate(selectedWeekStart.getDate() + (direction * 7));
         calDate = new Date(selectedWeekStart.getFullYear(), selectedWeekStart.getMonth(), 1);
@@ -655,7 +655,6 @@
         swipeAnimating = false;
     }
 
-    /* Touch / pointer drag handling on the swiper */
     (function wireSwipe() {
         var swiper = document.getElementById("weekSwiper");
         var track = document.getElementById("weekTrack");
@@ -695,7 +694,6 @@
             if (!decided) {
                 if (Math.abs(dx) < 6 && Math.abs(dy) < 6) return;
                 if (Math.abs(dy) > Math.abs(dx)) {
-                    // vertical scroll — hand off to browser
                     dragging = false;
                     return;
                 }
@@ -708,7 +706,6 @@
             lastX = t.clientX;
             currentOffsetPx = dx;
 
-            // Rubber-band beyond one full page
             var onePage = swiperWidth;
             if (currentOffsetPx > onePage) {
                 currentOffsetPx = onePage + (currentOffsetPx - onePage) * 0.3;
@@ -716,7 +713,6 @@
                 currentOffsetPx = -onePage + (currentOffsetPx + onePage) * 0.3;
             }
 
-            // Centre page sits at -swiperWidth px
             var finalPx = -swiperWidth + currentOffsetPx;
             track.style.transform = "translateX(" + finalPx + "px)";
         }
@@ -734,9 +730,9 @@
 
             var direction = 0;
             if (currentOffsetPx < -threshold || (currentOffsetPx < -20 && pxPerMs > velocityThreshold)) {
-                direction = 1;   // next week
+                direction = 1;
             } else if (currentOffsetPx > threshold || (currentOffsetPx > 20 && pxPerMs > velocityThreshold)) {
-                direction = -1;  // previous week
+                direction = -1;
             }
 
             swipeAnimating = true;
@@ -747,7 +743,6 @@
                 track.style.transform = "translateX(" + destPx + "px)";
                 setTimeout(function () { commitWeekChange(direction); }, 320);
             } else {
-                // snap back to centre
                 track.style.transform = "translateX(" + (-swiperW) + "px)";
                 setTimeout(function () { swipeAnimating = false; }, 320);
             }
@@ -763,7 +758,6 @@
             swipeMoved = false;
         });
 
-        // Mouse fallback for testing on a narrow desktop window
         swiper.addEventListener("mousedown", function (e) {
             if (!isMobileView()) return;
             onStart(e);
@@ -772,7 +766,6 @@
         window.addEventListener("mouseup", function (e) { if (dragging) onEnd(e); });
     })();
 
-    /* Arrow buttons — use the same animated flow */
     document.getElementById("prevMonth").addEventListener("click", function () {
         if (isMobileView()) animateStep(-1);
         else { calDate.setMonth(calDate.getMonth() - 1); renderCalendar(); }
@@ -790,10 +783,9 @@
         var swiper = document.getElementById("weekSwiper");
         var swiperW = swiper.getBoundingClientRect().width;
 
-        // reset to centre immediately (no animation)
         track.classList.remove("animate");
         track.style.transform = "translateX(" + (-swiperW) + "px)";
-        void track.offsetWidth; // force reflow
+        void track.offsetWidth;
 
         swipeAnimating = true;
         track.classList.add("animate");
@@ -847,6 +839,10 @@
                 lastMobile = nowMobile;
                 renderCalendar();
             }
+            // Always resize charts on window resize
+            if (document.getElementById("panel-analytics").classList.contains("active")) {
+                renderAnalytics();
+            }
         }, 150);
     });
 
@@ -869,6 +865,291 @@
         }).join("");
     }
 
+    /* ==========================================================
+       ANALYTICS
+       ========================================================== */
+
+    // Chart instances — destroyed & rebuilt on each render
+    var _charts = {};
+
+    function destroyChart(id) {
+        if (_charts[id]) {
+            _charts[id].destroy();
+            delete _charts[id];
+        }
+    }
+
+    // Read a CSS variable from the root (resolves theme changes)
+    function cssVar(name) {
+        return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    }
+
+    function renderAnalytics() {
+        var trades = state.trades;
+
+        if (!trades.length) {
+            document.getElementById("panel-analytics").innerHTML =
+                '<div class="panel-head"><h2>Analytics</h2>' +
+                '<span style="font-size:12px;color:var(--text-faint);">Based on all logged trades</span></div>' +
+                '<div class="an-empty"><div class="glyph">◈</div>' +
+                '<h3>No data yet</h3>' +
+                '<p>Log some trades and your analytics will appear here.</p></div>';
+            return;
+        }
+
+        var sorted = trades.slice().sort(function (a, b) { return a.date.localeCompare(b.date); });
+
+        /* ---- Compute core metrics ---- */
+        var wins  = sorted.filter(function (t) { return t.pl > 0; });
+        var losses = sorted.filter(function (t) { return t.pl < 0; });
+        var totalPL = sorted.reduce(function (s, t) { return s + t.pl; }, 0);
+        var avgWin  = wins.length  ? wins.reduce(function (s, t) { return s + t.pl; }, 0) / wins.length : 0;
+        var avgLoss = losses.length ? Math.abs(losses.reduce(function (s, t) { return s + t.pl; }, 0) / losses.length) : 0;
+        var profitFactor = avgLoss > 0 ? (avgWin / avgLoss).toFixed(2) : "∞";
+        var winRate = trades.length ? ((wins.length / trades.length) * 100).toFixed(1) : "0";
+        var largestWin  = wins.length  ? Math.max.apply(null, wins.map(function (t) { return t.pl; })) : 0;
+        var largestLoss = losses.length ? Math.min.apply(null, losses.map(function (t) { return t.pl; })) : 0;
+
+        // Current streak
+        var streakCount = 0;
+        var streakType  = "none";
+        for (var i = sorted.length - 1; i >= 0; i--) {
+            var pl = sorted[i].pl;
+            if (i === sorted.length - 1) {
+                streakType = pl > 0 ? "win" : pl < 0 ? "loss" : "none";
+                if (streakType !== "none") streakCount = 1;
+                else break;
+            } else {
+                var thisType = pl > 0 ? "win" : pl < 0 ? "loss" : "none";
+                if (thisType === streakType) streakCount++;
+                else break;
+            }
+        }
+
+        // Max drawdown (peak-to-trough on cumulative P/L)
+        var cumPL = 0, peak = 0, maxDD = 0;
+        sorted.forEach(function (t) {
+            cumPL += t.pl;
+            if (cumPL > peak) peak = cumPL;
+            var dd = peak - cumPL;
+            if (dd > maxDD) maxDD = dd;
+        });
+
+        /* ---- KPI strip ---- */
+        var streakBadge = streakCount > 0
+            ? '<span class="an-streak ' + streakType + '">' + streakCount + (streakType === "win" ? "W" : "L") + ' streak</span>'
+            : '<span class="an-streak none">No streak</span>';
+
+        document.getElementById("anKpiRow").innerHTML = [
+            kpi("Profit factor", profitFactor === "∞" ? "∞" : profitFactor + "×", profitFactor !== "∞" && Number(profitFactor) >= 1 ? "profit" : "loss", "avg win ÷ avg loss"),
+            kpi("Max drawdown", money(-maxDD), "loss", "peak to trough"),
+            kpi("Current streak", streakBadge, "", ""),
+            kpi("Expectancy", money((wins.length / trades.length) * avgWin - (losses.length / trades.length) * avgLoss), totalPL >= 0 ? "profit" : "loss", "per trade average")
+        ].join("");
+
+        /* ---- Equity curve ---- */
+        var equityDates = [], equityVals = [], running = 0;
+        sorted.forEach(function (t) {
+            running += t.pl;
+            equityDates.push(t.date);
+            equityVals.push(parseFloat(running.toFixed(2)));
+        });
+
+        document.getElementById("anEquitySub").textContent =
+            sorted[0].date + "  →  " + sorted[sorted.length - 1].date;
+
+        destroyChart("equity");
+        var eCtx = document.getElementById("anEquityCanvas").getContext("2d");
+        var profitColor = cssVar("--profit");
+        var lossColor   = cssVar("--loss");
+        var accentColor = cssVar("--accent");
+        var finalVal    = equityVals[equityVals.length - 1] || 0;
+        var lineColor   = finalVal >= 0 ? profitColor : lossColor;
+        var borderColor = cssVar("--border");
+        var textFaint   = cssVar("--text-faint");
+        var textMuted   = cssVar("--text-muted");
+
+        _charts["equity"] = new Chart(eCtx, {
+            type: "line",
+            data: {
+                labels: equityDates,
+                datasets: [{
+                    data: equityVals,
+                    borderColor: lineColor,
+                    borderWidth: 2,
+                    pointRadius: equityVals.length > 60 ? 0 : 3,
+                    pointHoverRadius: 5,
+                    pointBackgroundColor: lineColor,
+                    fill: true,
+                    backgroundColor: function (ctx) {
+                        var g = ctx.chart.ctx.createLinearGradient(0, 0, 0, ctx.chart.height);
+                        g.addColorStop(0, lineColor + "33");
+                        g.addColorStop(1, lineColor + "00");
+                        return g;
+                    },
+                    tension: 0.35
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label: function (ctx) { return " " + money(ctx.parsed.y); }
+                        },
+                        backgroundColor: cssVar("--surface"),
+                        borderColor: borderColor,
+                        borderWidth: 1,
+                        titleColor: textMuted,
+                        bodyColor: cssVar("--text"),
+                        padding: 10
+                    }
+                },
+                scales: {
+                    x: {
+                        ticks: { color: textFaint, font: { size: 10 }, maxTicksLimit: 8 },
+                        grid: { color: borderColor + "88" }
+                    },
+                    y: {
+                        ticks: {
+                            color: textFaint, font: { size: 10 },
+                            callback: function (v) { return moneyCompact(v); }
+                        },
+                        grid: { color: borderColor + "88" }
+                    }
+                }
+            }
+        });
+
+        /* ---- P/L by weekday ---- */
+        var dowNames = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+        var dowTotals = [0, 0, 0, 0, 0, 0, 0];
+        sorted.forEach(function (t) {
+            var d = new Date(t.date + "T00:00:00");
+            var dow = (d.getDay() + 6) % 7; // Mon=0
+            dowTotals[dow] += t.pl;
+        });
+
+        destroyChart("dow");
+        var dCtx = document.getElementById("anDowCanvas").getContext("2d");
+        _charts["dow"] = new Chart(dCtx, {
+            type: "bar",
+            data: {
+                labels: dowNames,
+                datasets: [{
+                    data: dowTotals,
+                    backgroundColor: dowTotals.map(function (v) {
+                        return v >= 0 ? profitColor + "CC" : lossColor + "CC";
+                    }),
+                    borderRadius: 5,
+                    borderSkipped: false
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label: function (ctx) { return " " + money(ctx.parsed.y); }
+                        },
+                        backgroundColor: cssVar("--surface"),
+                        borderColor: borderColor,
+                        borderWidth: 1,
+                        titleColor: textMuted,
+                        bodyColor: cssVar("--text"),
+                        padding: 10
+                    }
+                },
+                scales: {
+                    x: {
+                        ticks: { color: textFaint, font: { size: 11 } },
+                        grid: { display: false }
+                    },
+                    y: {
+                        ticks: {
+                            color: textFaint, font: { size: 10 },
+                            callback: function (v) { return moneyCompact(v); }
+                        },
+                        grid: { color: borderColor + "88" }
+                    }
+                }
+            }
+        });
+
+        /* ---- Avg win vs avg loss bars ---- */
+        var maxBar = Math.max(avgWin, avgLoss, 1);
+        document.getElementById("anRR").innerHTML =
+            '<div class="an-rr-item">' +
+            '<div class="an-rr-meta"><span>Avg win</span><span class="an-rr-val profit">' + money(avgWin) + '</span></div>' +
+            '<div class="an-rr-track"><div class="an-rr-fill profit" style="width:' + (avgWin / maxBar * 100).toFixed(1) + '%"></div></div>' +
+            '</div>' +
+            '<div class="an-rr-item">' +
+            '<div class="an-rr-meta"><span>Avg loss</span><span class="an-rr-val loss">-' + money(avgLoss) + '</span></div>' +
+            '<div class="an-rr-track"><div class="an-rr-fill loss" style="width:' + (avgLoss / maxBar * 100).toFixed(1) + '%"></div></div>' +
+            '</div>' +
+            '<div class="an-rr-ratio">Profit factor <strong>' + (profitFactor === "∞" ? "∞" : profitFactor + "×") + '</strong> · Win rate <strong>' + winRate + '%</strong></div>';
+
+        document.getElementById("anRRSub").textContent =
+            wins.length + " wins · " + losses.length + " losses";
+
+        /* ---- Symbol breakdown ---- */
+        var symMap = {};
+        sorted.forEach(function (t) {
+            var s = t.symbol.toUpperCase();
+            if (!symMap[s]) symMap[s] = { pl: 0, count: 0 };
+            symMap[s].pl += t.pl;
+            symMap[s].count++;
+        });
+        var symArr = Object.keys(symMap).map(function (k) { return { sym: k, pl: symMap[k].pl, count: symMap[k].count }; });
+        symArr.sort(function (a, b) { return Math.abs(b.pl) - Math.abs(a.pl); });
+        var maxSymPL = symArr.length ? Math.max.apply(null, symArr.map(function (s) { return Math.abs(s.pl); })) : 1;
+
+        document.getElementById("anSymbolList").innerHTML = symArr.slice(0, 8).map(function (s) {
+            var pct = (Math.abs(s.pl) / maxSymPL * 100).toFixed(1);
+            var col = s.pl >= 0 ? profitColor : lossColor;
+            return '<div class="an-sym-row">' +
+                '<span class="an-sym-name">' + escapeHtml(s.sym) + '</span>' +
+                '<span class="an-sym-count">' + s.count + ' trade' + (s.count === 1 ? "" : "s") + '</span>' +
+                '<span class="an-sym-pl ' + (s.pl >= 0 ? "profit" : "loss") + '">' + money(s.pl) + '</span>' +
+                '<div class="an-sym-bar-wrap"><div class="an-sym-bar" style="width:' + pct + '%;background:' + col + '"></div></div>' +
+                '</div>';
+        }).join("");
+
+        /* ---- Best & worst ---- */
+        var best = sorted.reduce(function (b, t) { return t.pl > b.pl ? t : b; }, sorted[0]);
+        var worst = sorted.reduce(function (b, t) { return t.pl < b.pl ? t : b; }, sorted[0]);
+
+        document.getElementById("anBestWorst").innerHTML =
+            bwRow("Best trade", best, "profit") +
+            bwRow("Worst trade", worst, "loss");
+    }
+
+    function kpi(label, value, cls, sub) {
+        return '<div class="an-kpi">' +
+            '<div class="ak-label">' + label + '</div>' +
+            '<div class="ak-value ' + cls + '">' + value + '</div>' +
+            (sub ? '<div class="ak-sub">' + sub + '</div>' : '') +
+            '</div>';
+    }
+
+    function bwRow(label, trade, cls) {
+        if (!trade) return "";
+        return '<div class="an-bw-row">' +
+            '<div class="an-bw-left">' +
+            '<div class="an-bw-label">' + label + '</div>' +
+            '<div class="an-bw-symbol">' + escapeHtml(trade.symbol) + ' <span class="dir-tag ' + trade.direction + '" style="font-size:9.5px;padding:1px 6px;">' + trade.direction + '</span></div>' +
+            '<div class="an-bw-meta">' + trade.date + (trade.reason ? ' · ' + escapeHtml(trade.reason).slice(0, 60) + (trade.reason.length > 60 ? '…' : '') : '') + '</div>' +
+            '</div>' +
+            '<div class="an-bw-pl ' + cls + '">' + money(trade.pl) + '</div>' +
+            '</div>';
+    }
+
+    /* ========================================================== */
+
     /* ---------- Render all ---------- */
     function renderAll() {
         renderStats();
@@ -876,6 +1157,10 @@
         renderTx();
         renderCalendar();
         renderAudit();
+        // Only render analytics if that tab is currently active
+        if (document.getElementById("panel-analytics").classList.contains("active")) {
+            renderAnalytics();
+        }
     }
 
     /* ---------- Auth ---------- */
@@ -955,4 +1240,14 @@
     });
 
     initDow();
+
+    /* Load Chart.js from CDN — analytics requires it */
+    (function loadChartJs() {
+        if (window.Chart) return;
+        var s = document.createElement("script");
+        s.src = "https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js";
+        s.crossOrigin = "anonymous";
+        document.head.appendChild(s);
+    })();
+
 })();
