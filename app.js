@@ -41,6 +41,16 @@
         return (n < 0 ? "-" : "") + s;
     }
 
+    function moneyCompact(n) {
+        n = Number(n) || 0;
+        var abs = Math.abs(n);
+        var s;
+        if (abs >= 10000) s = "R" + Math.round(abs / 1000) + "k";
+        else if (abs >= 1000) s = "R" + (abs / 1000).toFixed(1).replace(/\.0$/, "") + "k";
+        else s = "R" + Math.round(abs);
+        return (n < 0 ? "-" : "") + s;
+    }
+
     function toast(msg) {
         var t = document.getElementById("toast");
         t.textContent = msg;
@@ -105,7 +115,6 @@
         ov.addEventListener("click", function (e) { if (e.target === ov) ov.classList.remove("open"); });
     });
 
-    /* segmented controls */
     function wireSeg(segId, activeClassMap) {
         var seg = document.getElementById(segId);
         seg.querySelectorAll("button").forEach(function (btn) {
@@ -360,10 +369,11 @@
         list.querySelectorAll("[data-txdel]").forEach(function (b) { b.addEventListener("click", function () { deleteTx(b.dataset.txdel); }); });
     }
 
-    /* ---------- Calendar ---------- */
+    /* ---------- Calendar shared helpers ---------- */
     var calDate = new Date();
     calDate.setDate(1);
     var DOW = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+    var selectedWeekStart = null;
 
     function initDow() {
         document.getElementById("calDow").innerHTML = DOW.map(function (d) { return '<div class="cal-dow">' + d + '</div>'; }).join("");
@@ -377,7 +387,6 @@
         });
         return map;
     }
-
     function txByDate() {
         var map = {};
         state.transactions.forEach(function (t) {
@@ -386,14 +395,38 @@
         });
         return map;
     }
-
     function pad(n) { return n < 10 ? "0" + n : "" + n; }
+    function isoDate(d) {
+        return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
+    }
+    function getMondayOf(date) {
+        var d = new Date(date);
+        d.setHours(0, 0, 0, 0);
+        var day = d.getDay();
+        var diff = (day === 0 ? -6 : 1 - day);
+        d.setDate(d.getDate() + diff);
+        return d;
+    }
+    function isMobileView() {
+        return window.matchMedia("(max-width: 760px)").matches;
+    }
 
     function renderCalendar() {
         var year = calDate.getFullYear(), month = calDate.getMonth();
-        document.getElementById("calMonthLabel").textContent = calDate.toLocaleString("en-ZA", { month: "long", year: "numeric" });
+        document.getElementById("calMonthLabel").textContent =
+            calDate.toLocaleString("en-ZA", { month: "long", year: "numeric" });
+
+        if (isMobileView()) {
+            renderWeekStrip(year, month);
+        } else {
+            renderMonthGrid(year, month);
+        }
+    }
+
+    /* ---------- Desktop month grid ---------- */
+    function renderMonthGrid(year, month) {
         var firstDay = new Date(year, month, 1);
-        var startOffset = (firstDay.getDay() + 6) % 7; // Monday = 0
+        var startOffset = (firstDay.getDay() + 6) % 7;
         var daysInMonth = new Date(year, month + 1, 0).getDate();
         var byDate = tradesByDate();
         var txDate = txByDate();
@@ -417,18 +450,30 @@
             if (dateStr === todayStr) cls += " today";
 
             var txChips = "";
+            var txDots = "";
             if (hasTx) {
                 txChips = '<div class="tx-row">';
                 if (depSum > 0) txChips += '<span class="tx-chip dep">+' + money(depSum) + '</span>';
                 if (wdSum > 0) txChips += '<span class="tx-chip wd">-' + money(wdSum) + '</span>';
                 txChips += '</div>';
+
+                txDots = '<div class="tx-dots">';
+                if (depSum > 0) txDots += '<span class="tx-dot dep" title="Deposit +' + money(depSum) + '"></span>';
+                if (wdSum > 0) txDots += '<span class="tx-dot wd" title="Withdrawal -' + money(wdSum) + '"></span>';
+                txDots += '</div>';
             }
 
+            var titleAttr = hasTrades
+                ? (' title="P/L: ' + money(dayPL) + ' · ' + dayTrades.length + ' trade' + (dayTrades.length === 1 ? "" : "s") + '"')
+                : '';
+
             cells.push(
-                '<div class="' + cls + '" data-date="' + dateStr + '">' +
+                '<div class="' + cls + '" data-date="' + dateStr + '"' + titleAttr + '>' +
                 '<div class="d-num">' + d + '</div>' +
-                (hasTrades ? '<div class="d-pl mono ' + (dayPL >= 0 ? "profit" : "loss") + '">' + money(dayPL) + '</div><div class="d-meta">' + dayTrades.length + ' trade' + (dayTrades.length === 1 ? "" : "s") + '</div>' : '<div></div>') +
-                txChips +
+                (hasTrades
+                    ? '<div class="d-pl mono ' + (dayPL >= 0 ? "profit" : "loss") + '">' + moneyCompact(dayPL) + '</div><div class="d-meta">' + dayTrades.length + ' trade' + (dayTrades.length === 1 ? "" : "s") + '</div>'
+                    : '<div></div>') +
+                txChips + txDots +
                 '</div>'
             );
         }
@@ -443,6 +488,321 @@
         });
     }
 
+    /* ---------- Mobile sliding week swiper ---------- */
+    var swipeMoved = false;        // suppress click after a drag
+    var swipeAnimating = false;    // ignore new touches during the settle animation
+
+    function renderWeekStrip(year, month) {
+        var byDate = tradesByDate();
+        var txDate = txByDate();
+        var todayStr = todayISO();
+
+        if (!selectedWeekStart) {
+            selectedWeekStart = getMondayOf(new Date(year, month, 1));
+        }
+
+        var track = document.getElementById("weekTrack");
+
+        var prevMon = new Date(selectedWeekStart); prevMon.setDate(prevMon.getDate() - 7);
+        var nextMon = new Date(selectedWeekStart); nextMon.setDate(nextMon.getDate() + 7);
+
+        track.innerHTML =
+            buildWeekPageHtml(prevMon, byDate, txDate, todayStr) +
+            buildWeekPageHtml(selectedWeekStart, byDate, txDate, todayStr) +
+            buildWeekPageHtml(nextMon, byDate, txDate, todayStr);
+
+        // Reset to centre page without animation
+        track.classList.remove("animate");
+        track.style.transform = "translateX(-33.3333%)";
+
+        // Bind day clicks on all three pages
+        track.querySelectorAll(".week-day").forEach(function (btn) {
+            btn.addEventListener("click", function () {
+                if (swipeMoved || swipeAnimating) return;
+                track.querySelectorAll(".week-day").forEach(function (b) { b.classList.remove("selected"); });
+                btn.classList.add("selected");
+                renderWeekDetail(btn.dataset.date);
+            });
+        });
+
+        // Auto-select: today if in centre week, else first active, else Monday
+        var todayInWeek = null;
+        var firstActive = null;
+        for (var k = 0; k < 7; k++) {
+            var dt2 = new Date(selectedWeekStart);
+            dt2.setDate(dt2.getDate() + k);
+            var ds = isoDate(dt2);
+            if (ds === todayStr) todayInWeek = ds;
+            if (!firstActive && ((byDate[ds] || []).length || (txDate[ds] || []).length)) firstActive = ds;
+        }
+        var selected = todayInWeek || firstActive || isoDate(selectedWeekStart);
+
+        track.querySelectorAll('.week-day[data-date="' + selected + '"]').forEach(function (btn) {
+            btn.classList.add("selected");
+        });
+
+        renderWeekDetail(selected);
+    }
+
+    function buildWeekPageHtml(monday, byDate, txDate, todayStr) {
+        // Relative bar scale within this week
+        var maxAbs = 0;
+        for (var i = 0; i < 7; i++) {
+            var dt = new Date(monday); dt.setDate(dt.getDate() + i);
+            var key = isoDate(dt);
+            var pl = (byDate[key] || []).reduce(function (s, t) { return s + Number(t.pl || 0); }, 0);
+            if (Math.abs(pl) > maxAbs) maxAbs = Math.abs(pl);
+        }
+        if (maxAbs === 0) maxAbs = 1;
+
+        var cells = [];
+        for (var i = 0; i < 7; i++) {
+            var dt = new Date(monday); dt.setDate(dt.getDate() + i);
+            var dateStr = isoDate(dt);
+            var dayTrades = byDate[dateStr] || [];
+            var dayTx = txDate[dateStr] || [];
+            var dayPL = dayTrades.reduce(function (s, t) { return s + Number(t.pl || 0); }, 0);
+            var hasTx = dayTx.length > 0;
+            var isToday = dateStr === todayStr;
+
+            var barH = 4;
+            if (dayTrades.length) barH = 4 + Math.round((Math.abs(dayPL) / maxAbs) * 24);
+            var barClass = dayTrades.length
+                ? (dayPL >= 0 ? "profit" : "loss")
+                : (hasTx ? "tx" : "");
+
+            cells.push(
+                '<button type="button" class="week-day' + (isToday ? " today" : "") +
+                '" data-date="' + dateStr + '">' +
+                '<span class="wd-dow">' + DOW[i] + '</span>' +
+                '<span class="wd-num">' + dt.getDate() + '</span>' +
+                '<span class="wd-bar ' + barClass + '" style="height:' + barH + 'px"></span>' +
+                (hasTx ? '<span class="wd-tx-dot"></span>' : '') +
+                '</button>'
+            );
+        }
+        return '<div class="week-page">' + cells.join("") + '</div>';
+    }
+
+    function renderWeekDetail(dateStr) {
+        var byDate = tradesByDate();
+        var txDate = txByDate();
+        var dayTrades = byDate[dateStr] || [];
+        var dayTx = txDate[dateStr] || [];
+
+        var dObj = new Date(dateStr + "T00:00:00");
+        var dateLabel = dObj.toLocaleDateString("en-ZA", {
+            weekday: "long", day: "numeric", month: "long"
+        });
+
+        var dayPL = dayTrades.reduce(function (s, t) { return s + Number(t.pl || 0); }, 0);
+
+        var html = '<div class="wd-head">' +
+            '<span class="wd-date">' + dateLabel + '</span>' +
+            (dayTrades.length
+                ? '<span class="wd-total mono ' + (dayPL >= 0 ? "profit" : "loss") + '">' + money(dayPL) + '</span>'
+                : '') +
+            '</div>';
+
+        if (!dayTrades.length && !dayTx.length) {
+            html += '<div class="wd-empty">No activity on this day.</div>';
+        } else {
+            if (dayTx.length) {
+                html += '<div class="wd-section-label">Transactions</div>';
+                html += dayTx.map(function (t) {
+                    var isDep = t.type === "deposit";
+                    return '<div class="wd-row">' +
+                        '<div class="wd-left">' +
+                        '<div class="wd-title">' + (isDep ? "Deposit" : "Withdrawal") + '</div>' +
+                        (t.note ? '<div class="wd-meta">' + escapeHtml(t.note) + '</div>' : '') +
+                        '</div>' +
+                        '<div class="wd-amt mono ' + (isDep ? "profit" : "loss") + '">' +
+                        (isDep ? "+" : "-") + money(t.amount).replace("-", "") +
+                        '</div>' +
+                        '</div>';
+                }).join("");
+            }
+            if (dayTrades.length) {
+                html += '<div class="wd-section-label">Trades</div>';
+                html += dayTrades.map(function (t) {
+                    return '<div class="wd-row">' +
+                        '<div class="wd-left">' +
+                        '<div class="wd-title">' + escapeHtml(t.symbol) +
+                        ' <span class="dir-tag ' + t.direction + '" style="font-size:9.5px;padding:1px 6px;">' + t.direction + '</span></div>' +
+                        '<div class="wd-meta">entry ' + (t.entry || "—") + ' · lot ' + (t.lot || "—") +
+                        (t.reason ? ' · ' + escapeHtml(t.reason) : '') + '</div>' +
+                        '</div>' +
+                        '<div class="wd-amt mono ' + (t.pl >= 0 ? "profit" : "loss") + '">' + money(t.pl) + '</div>' +
+                        '</div>';
+                }).join("");
+            }
+        }
+
+        document.getElementById("weekDetail").innerHTML = html;
+    }
+
+    /* Commit a week change after the slide finishes */
+    function commitWeekChange(direction) {
+        // direction: -1 = previous week, +1 = next week
+        selectedWeekStart = new Date(selectedWeekStart);
+        selectedWeekStart.setDate(selectedWeekStart.getDate() + (direction * 7));
+        calDate = new Date(selectedWeekStart.getFullYear(), selectedWeekStart.getMonth(), 1);
+
+        document.getElementById("calMonthLabel").textContent =
+            calDate.toLocaleString("en-ZA", { month: "long", year: "numeric" });
+
+        renderWeekStrip(calDate.getFullYear(), calDate.getMonth());
+        swipeAnimating = false;
+    }
+
+    /* Touch / pointer drag handling on the swiper */
+    (function wireSwipe() {
+        var swiper = document.getElementById("weekSwiper");
+        var track = document.getElementById("weekTrack");
+
+        var startX = 0, startY = 0, startTime = 0, lastX = 0;
+        var swiperWidth = 0;
+        var dragging = false;
+        var decided = false;
+        var currentOffsetPx = 0;
+
+        function getSwiperWidth() {
+            return swiper.getBoundingClientRect().width;
+        }
+
+        function onStart(e) {
+            if (!isMobileView()) return;
+            if (swipeAnimating) return;
+            var t = e.touches ? e.touches[0] : e;
+            startX = t.clientX;
+            startY = t.clientY;
+            lastX = startX;
+            startTime = Date.now();
+            swiperWidth = getSwiperWidth();
+            currentOffsetPx = 0;
+            dragging = true;
+            decided = false;
+            swipeMoved = false;
+            track.classList.remove("animate");
+        }
+
+        function onMove(e) {
+            if (!dragging) return;
+            var t = e.touches ? e.touches[0] : e;
+            var dx = t.clientX - startX;
+            var dy = t.clientY - startY;
+
+            if (!decided) {
+                if (Math.abs(dx) < 6 && Math.abs(dy) < 6) return;
+                if (Math.abs(dy) > Math.abs(dx)) {
+                    // vertical scroll — hand off to browser
+                    dragging = false;
+                    return;
+                }
+                decided = true;
+            }
+
+            if (e.cancelable) e.preventDefault();
+            swipeMoved = true;
+
+            lastX = t.clientX;
+            currentOffsetPx = dx;
+
+            // Rubber-band beyond one full page
+            var onePage = swiperWidth;
+            if (currentOffsetPx > onePage) {
+                currentOffsetPx = onePage + (currentOffsetPx - onePage) * 0.3;
+            } else if (currentOffsetPx < -onePage) {
+                currentOffsetPx = -onePage + (currentOffsetPx + onePage) * 0.3;
+            }
+
+            // Centre page sits at -swiperWidth px
+            var finalPx = -swiperWidth + currentOffsetPx;
+            track.style.transform = "translateX(" + finalPx + "px)";
+        }
+
+        function onEnd() {
+            if (!dragging) return;
+            dragging = false;
+            if (!decided) { swipeMoved = false; return; }
+
+            var swiperW = swiperWidth || getSwiperWidth();
+            var threshold = swiperW * 0.22;
+            var velocityThreshold = 0.45;
+            var dt = Date.now() - startTime;
+            var pxPerMs = Math.abs(currentOffsetPx) / Math.max(dt, 1);
+
+            var direction = 0;
+            if (currentOffsetPx < -threshold || (currentOffsetPx < -20 && pxPerMs > velocityThreshold)) {
+                direction = 1;   // next week
+            } else if (currentOffsetPx > threshold || (currentOffsetPx > 20 && pxPerMs > velocityThreshold)) {
+                direction = -1;  // previous week
+            }
+
+            swipeAnimating = true;
+            track.classList.add("animate");
+
+            if (direction !== 0) {
+                var destPx = direction > 0 ? -swiperW * 2 : 0;
+                track.style.transform = "translateX(" + destPx + "px)";
+                setTimeout(function () { commitWeekChange(direction); }, 320);
+            } else {
+                // snap back to centre
+                track.style.transform = "translateX(" + (-swiperW) + "px)";
+                setTimeout(function () { swipeAnimating = false; }, 320);
+            }
+
+            setTimeout(function () { swipeMoved = false; }, 60);
+        }
+
+        swiper.addEventListener("touchstart", onStart, { passive: true });
+        swiper.addEventListener("touchmove", onMove, { passive: false });
+        swiper.addEventListener("touchend", onEnd);
+        swiper.addEventListener("touchcancel", function () {
+            dragging = false;
+            swipeMoved = false;
+        });
+
+        // Mouse fallback for testing on a narrow desktop window
+        swiper.addEventListener("mousedown", function (e) {
+            if (!isMobileView()) return;
+            onStart(e);
+        });
+        window.addEventListener("mousemove", function (e) { if (dragging) onMove(e); });
+        window.addEventListener("mouseup", function (e) { if (dragging) onEnd(e); });
+    })();
+
+    /* Arrow buttons — use the same animated flow */
+    document.getElementById("prevMonth").addEventListener("click", function () {
+        if (isMobileView()) animateStep(-1);
+        else { calDate.setMonth(calDate.getMonth() - 1); renderCalendar(); }
+    });
+    document.getElementById("nextMonth").addEventListener("click", function () {
+        if (isMobileView()) animateStep(1);
+        else { calDate.setMonth(calDate.getMonth() + 1); renderCalendar(); }
+    });
+
+    function animateStep(direction) {
+        if (swipeAnimating) return;
+        if (!selectedWeekStart) selectedWeekStart = getMondayOf(new Date());
+
+        var track = document.getElementById("weekTrack");
+        var swiper = document.getElementById("weekSwiper");
+        var swiperW = swiper.getBoundingClientRect().width;
+
+        // reset to centre immediately (no animation)
+        track.classList.remove("animate");
+        track.style.transform = "translateX(" + (-swiperW) + "px)";
+        void track.offsetWidth; // force reflow
+
+        swipeAnimating = true;
+        track.classList.add("animate");
+        var destPx = direction > 0 ? -swiperW * 2 : 0;
+        track.style.transform = "translateX(" + destPx + "px)";
+        setTimeout(function () { commitWeekChange(direction); }, 320);
+    }
+
+    /* ---------- Desktop day detail modal ---------- */
     function openDayDetail(dateStr) {
         var byDate = tradesByDate();
         var txDate = txByDate();
@@ -476,11 +836,18 @@
         openOverlay("dayOverlay");
     }
 
-    document.getElementById("prevMonth").addEventListener("click", function () {
-        calDate.setMonth(calDate.getMonth() - 1); renderCalendar();
-    });
-    document.getElementById("nextMonth").addEventListener("click", function () {
-        calDate.setMonth(calDate.getMonth() + 1); renderCalendar();
+    /* Re-render on viewport size changes crossing the breakpoint */
+    var lastMobile = isMobileView();
+    var resizeTimer = null;
+    window.addEventListener("resize", function () {
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(function () {
+            var nowMobile = isMobileView();
+            if (nowMobile !== lastMobile) {
+                lastMobile = nowMobile;
+                renderCalendar();
+            }
+        }, 150);
     });
 
     /* ---------- Audit log ---------- */
@@ -545,7 +912,6 @@
             document.getElementById("authHint").textContent = msg;
             toast("Confirmation email sent");
         }
-        // onAuthStateChange below handles moving into the app once a session exists
     });
 
     document.getElementById("signOutBtn").addEventListener("click", async function () {
