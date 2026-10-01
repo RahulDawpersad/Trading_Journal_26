@@ -13,13 +13,16 @@
     var currentUser = null;
     var channel = null;
 
-    var state = { trades: [], transactions: [], audit: [] };
+    var state = { trades: [], transactions: [], audit: [], noTrades: [] };
 
     async function fetchAll() {
         var uidNow = currentUser.id;
         var tRes = await sb.from("trades").select("*").eq("user_id", uidNow).order("date", { ascending: false });
         var xRes = await sb.from("transactions").select("*").eq("user_id", uidNow).order("date", { ascending: false });
         var aRes = await sb.from("audit_log").select("*").eq("user_id", uidNow).order("created_at", { ascending: false }).limit(200);
+        var nRes = await sb.from("no_trade_days").select("*").eq("user_id", uidNow);
+        if (nRes.error) console.error(nRes.error);
+        else state.noTrades = nRes.data.map(function (r) { return r.date; });
         if (tRes.error) console.error(tRes.error); else state.trades = tRes.data.map(normalizeTrade);
         if (xRes.error) console.error(xRes.error); else state.transactions = xRes.data.map(normalizeTx);
         if (aRes.error) console.error(aRes.error); else state.audit = aRes.data;
@@ -401,6 +404,49 @@
         });
         return map;
     }
+
+    /* ---------- No-trade days ---------- */
+    function noTradeSet() {
+        var m = {};
+        state.noTrades.forEach(function (d) { m[d] = true; });
+        return m;
+    }
+    function isNoTradeDay(d) { return state.noTrades.indexOf(d) !== -1; }
+
+    async function markNoTrade(dateStr) {
+        if (dateStr > todayISO()) { toast("Can't mark a future day"); return; }
+        if (state.trades.some(function (t) { return t.date === dateStr; })) { toast("You have trades on that day"); return; }
+        if (isNoTradeDay(dateStr)) { toast("Already marked"); return; }
+        var res = await sb.from("no_trade_days").insert({ user_id: currentUser.id, date: dateStr }).select();
+        if (res.error) { toast("Couldn't save: " + res.error.message); return; }
+        await fetchAll(); renderAll();
+        toast("Marked as no-trade day");
+    }
+    async function unmarkNoTrade(dateStr) {
+        var res = await sb.from("no_trade_days").delete().eq("user_id", currentUser.id).eq("date", dateStr);
+        if (res.error) { toast("Couldn't remove: " + res.error.message); return; }
+        await fetchAll(); renderAll();
+        toast("Mark removed");
+    }
+    function ntActionHtml(dateStr, hasTrades) {
+        if (hasTrades) return "";
+        var on = isNoTradeDay(dateStr);
+        return '<button type="button" class="btn ghost nt-btn" data-nt="' + (on ? "unmark" : "mark") +
+            '" data-date="' + dateStr + '">' + (on ? "Remove no-trade mark" : "Mark as no trades") + '</button>';
+    }
+    function wireNtButtons(container, after) {
+        container.querySelectorAll("[data-nt]").forEach(function (b) {
+            b.addEventListener("click", async function () {
+                if (b.dataset.nt === "mark") await markNoTrade(b.dataset.date);
+                else await unmarkNoTrade(b.dataset.date);
+                if (after) after();
+            });
+        });
+    }
+    document.getElementById("noTradeBtn").addEventListener("click", function () {
+        markNoTrade(todayISO());
+    });
+
     function pad(n) { return n < 10 ? "0" + n : "" + n; }
     function isoDate(d) {
         return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
@@ -437,6 +483,7 @@
         var byDate = tradesByDate();
         var txDate = txByDate();
         var todayStr = todayISO();
+        var ntSet = noTradeSet();
 
         var cells = [];
         for (var i = 0; i < startOffset; i++) cells.push('<div class="cal-cell pad"></div>');
@@ -454,6 +501,7 @@
             if (hasTrades) cls += dayPL >= 0 ? " win has-trades" : " loss has-trades";
             else if (hasTx) cls += " activity-only has-trades";
             if (dateStr === todayStr) cls += " today";
+            if (!hasTrades && ntSet[dateStr]) cls += " notrade";
 
             var txChips = "";
             var txDots = "";
@@ -478,7 +526,7 @@
                 '<div class="d-num">' + d + '</div>' +
                 (hasTrades
                     ? '<div class="d-pl mono ' + (dayPL >= 0 ? "profit" : "loss") + '">' + moneyCompact(dayPL) + '</div><div class="d-meta">' + dayTrades.length + ' trade' + (dayTrades.length === 1 ? "" : "s") + '</div>'
-                    : '<div></div>') +
+                    : (ntSet[dateStr] ? '<div class="d-nt">No trades</div>' : '<div></div>')) +
                 txChips + txDots +
                 '</div>'
             );
@@ -489,7 +537,7 @@
 
         var grid = document.getElementById("calGrid");
         grid.innerHTML = cells.join("");
-        grid.querySelectorAll(".has-trades").forEach(function (cell) {
+        grid.querySelectorAll(".cal-cell[data-date]").forEach(function (cell) {
             cell.addEventListener("click", function () { openDayDetail(cell.dataset.date); });
         });
     }
@@ -571,7 +619,7 @@
             if (dayTrades.length) barH = 4 + Math.round((Math.abs(dayPL) / maxAbs) * 24);
             var barClass = dayTrades.length
                 ? (dayPL >= 0 ? "profit" : "loss")
-                : (hasTx ? "tx" : "");
+                : (hasTx ? "tx" : (isNoTradeDay(dateStr) ? "nt" : ""));
 
             cells.push(
                 '<button type="button" class="week-day' + (isToday ? " today" : "") +
@@ -607,7 +655,7 @@
             '</div>';
 
         if (!dayTrades.length && !dayTx.length) {
-            html += '<div class="wd-empty">No activity on this day.</div>';
+            html += '<div class="wd-empty">' + (isNoTradeDay(dateStr) ? "No trades taken this day." : "No activity on this day.") + '</div>';
         } else {
             if (dayTx.length) {
                 html += '<div class="wd-section-label">Transactions</div>';
@@ -640,7 +688,10 @@
             }
         }
 
-        document.getElementById("weekDetail").innerHTML = html;
+        html += ntActionHtml(dateStr, dayTrades.length > 0);
+        var wdEl = document.getElementById("weekDetail");
+        wdEl.innerHTML = html;
+        wireNtButtons(wdEl);
     }
 
     function commitWeekChange(direction) {
@@ -824,7 +875,12 @@
                     '</div>';
             }).join("");
         }
-        document.getElementById("dayModalBody").innerHTML = body || "<p>Nothing on this day.</p>";
+        if (!body) body = '<p style="color:var(--text-muted);font-size:13px;">' +
+            (isNoTradeDay(dateStr) ? "No trades taken this day." : "Nothing logged on this day.") + '</p>';
+        body += ntActionHtml(dateStr, dayTrades.length > 0);
+        var dmb = document.getElementById("dayModalBody");
+        dmb.innerHTML = body;
+        wireNtButtons(dmb, function () { closeOverlay("dayOverlay"); });
         openOverlay("dayOverlay");
     }
 
@@ -1224,6 +1280,8 @@
             .on("postgres_changes", { event: "*", schema: "public", table: "transactions", filter: "user_id=eq." + currentUser.id },
                 async function () { await fetchAll(); renderAll(); })
             .on("postgres_changes", { event: "INSERT", schema: "public", table: "audit_log", filter: "user_id=eq." + currentUser.id },
+                async function () { await fetchAll(); renderAll(); })
+            .on("postgres_changes", { event: "*", schema: "public", table: "no_trade_days", filter: "user_id=eq." + currentUser.id },
                 async function () { await fetchAll(); renderAll(); })
             .subscribe();
     }
