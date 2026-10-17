@@ -557,50 +557,62 @@ nav.tabs button.active::after {
     text-overflow: ellipsis;
 }
 
+.cal-cell .d-pl.profit {
+    color: var(--profit);
+}
+
+.cal-cell .d-pl.loss {
+    color: var(--loss);
+}
+
 .cal-cell .d-meta {
     font-size: 10.5px;
     color: var(--text-faint);
 }
 
-.cal-cell .tx-row {
+.cal-cell .d-nt {
+    font-size: 10.5px;
+    color: var(--text-faint);
+}
+
+/* Calendar deposit / withdrawal pills */
+.cal-tx {
     display: flex;
     flex-wrap: wrap;
-    gap: 3px;
+    gap: 4px;
+    min-width: 0;
 }
 
 .tx-chip {
-    font-size: 9.5px;
-    font-weight: 700;
-    line-height: 1.6;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-family: "JetBrains Mono", "SF Mono", Consolas, monospace;
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 1;
+    padding: 3px 7px 3px 5px;
+    border-radius: 100px;
     white-space: nowrap;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.tx-chip i {
+    font-style: normal;
+    font-size: 10px;
+    opacity: .85;
 }
 
 .tx-chip.dep {
     color: var(--profit);
+    background: var(--profit-soft);
 }
 
 .tx-chip.wd {
     color: var(--loss);
-}
-
-.cal-cell .tx-dots {
-    display: none;
-    gap: 4px;
-}
-
-.tx-dot {
-    width: 5px;
-    height: 5px;
-    border-radius: 50%;
-    flex-shrink: 0;
-}
-
-.tx-dot.dep {
-    background: var(--profit);
-}
-
-.tx-dot.wd {
-    background: var(--loss);
+    background: var(--loss-soft);
 }
 
 /* ---------- Mobile week swiper (desktop: hidden) ---------- */
@@ -777,6 +789,14 @@ td.reason {
     font-weight: 700;
     font-size: 14px;
     white-space: nowrap;
+}
+
+.tx-amt.profit {
+    color: var(--profit);
+}
+
+.tx-amt.loss {
+    color: var(--loss);
 }
 
 /* ---------- Modal ---------- */
@@ -1817,6 +1837,14 @@ textarea {
     white-space: nowrap;
 }
 
+.an-kpi .ak-value.profit {
+    color: var(--profit);
+}
+
+.an-kpi .ak-value.loss {
+    color: var(--loss);
+}
+
 .an-kpi .ak-sub {
     font-size: 11px;
     color: var(--text-faint);
@@ -1901,6 +1929,14 @@ textarea {
     font-size: 13px;
 }
 
+.an-rr-meta .an-rr-val.profit {
+    color: var(--profit);
+}
+
+.an-rr-meta .an-rr-val.loss {
+    color: var(--loss);
+}
+
 .an-rr-track {
     height: 10px;
     border-radius: 6px;
@@ -1975,6 +2011,14 @@ textarea {
     text-align: right;
 }
 
+.an-sym-pl.profit {
+    color: var(--profit);
+}
+
+.an-sym-pl.loss {
+    color: var(--loss);
+}
+
 .an-sym-bar-wrap {
     grid-column: 1 / -1;
     height: 5px;
@@ -2036,6 +2080,14 @@ textarea {
     font-weight: 700;
     font-size: 15px;
     white-space: nowrap;
+}
+
+.an-bw-pl.profit {
+    color: var(--profit);
+}
+
+.an-bw-pl.loss {
+    color: var(--loss);
 }
 
 /* Streak badge */
