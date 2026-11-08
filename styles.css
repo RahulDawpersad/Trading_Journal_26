@@ -411,3 +411,71 @@ textarea { resize: vertical; min-height: 60px; }
 @media (prefers-reduced-motion: reduce) {
     * { animation: none !important; transition: none !important; }
 }
+
+/* ============================================================
+   V3 PASS 2 — "the calendar is the product"
+   Appended overrides. Same IDs/classes, JS untouched.
+   Signature detail: ledger double-rule under the totals.
+   ============================================================ */
+
+.brand h1 { font-size: 34px; }
+
+/* --- Totals strip: no boxes, big type hierarchy, double rule --- */
+.summary { grid-template-columns: 2.2fr repeat(4, 1fr); gap: 0; padding-bottom: 20px; margin-bottom: 26px; border-bottom: 4px double var(--text); }
+.summary .card, .summary .card:first-child { background: none; border: none; box-shadow: none; border-radius: 0; color: inherit; padding: 4px 18px; border-left: 1px solid var(--border); }
+.summary .card:first-child { padding-left: 0; border-left: none; }
+.summary .card:first-child .label, .summary .card:first-child .sub { color: var(--text-muted); }
+.summary .card:first-child .value { color: var(--text); font-size: 54px; font-weight: 800; line-height: 1; letter-spacing: -.035em; font-family: "Bricolage Grotesque", sans-serif; }
+.card .label { font-size: 12px; font-weight: 500; }
+.card .value { font-size: 22px; }
+
+/* --- Calendar: bigger, solid heat tiles with a ledger underline --- */
+.panel-head h2 { font-size: 22px; }
+.cal-grid { gap: 5px; }
+.cal-cell { border: none; border-bottom: 3px solid var(--border); border-radius: 4px; background: var(--surface-2); min-height: 116px; padding: 10px; box-shadow: none; }
+.cal-cell.pad { border: none; background: transparent; opacity: 0; }
+.cal-cell.win { background: color-mix(in srgb, var(--profit) 17%, var(--surface)); border-bottom-color: var(--profit); }
+.cal-cell.loss { background: color-mix(in srgb, var(--loss) 17%, var(--surface)); border-bottom-color: var(--loss); }
+.cal-cell.activity-only { background: color-mix(in srgb, var(--accent) 12%, var(--surface)); border-bottom-color: var(--accent); }
+.cal-cell.notrade { background: var(--surface); border-bottom-style: dashed; }
+.cal-cell.today { box-shadow: none; outline: 2px solid var(--accent); outline-offset: -2px; }
+.cal-cell .d-num { font-size: 11.5px; }
+.cal-cell .d-pl { font-size: 19px; font-weight: 600; }
+.cal-cell .d-meta, .cal-cell .d-nt { font-size: 11px; }
+
+/* --- Fewer boxes: tables and analytics read like a report --- */
+.table-wrap { border-left: none; border-right: none; border-radius: 0; box-shadow: none; background: transparent; }
+thead th { background: transparent; }
+.an-kpi-row { gap: 0 28px; margin-bottom: 26px; }
+.an-kpi { background: none; border: none; border-top: 1px solid var(--border); border-radius: 0; box-shadow: none; padding: 12px 0 4px; }
+.an-kpi .ak-value { font-size: 26px; }
+.an-grid { gap: 32px 40px; }
+.an-card { background: none; border: none; border-top: 3px solid var(--text); border-radius: 0; box-shadow: none; padding: 14px 0 0; }
+.an-card-title { font-size: 16px; }
+.an-rr-track, .an-sym-bar-wrap { background: var(--border); border: none; }
+
+/* --- Tablet --- */
+@media (max-width: 1024px) {
+    .summary { grid-template-columns: repeat(4, 1fr); row-gap: 18px; }
+    .summary .card:nth-child(n) { grid-column: auto; }
+    .summary .card:nth-child(1) { grid-column: 1 / -1; }
+    .summary .card:nth-child(2) { padding-left: 0; border-left: none; }
+    .an-kpi-row { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* --- Phone: 2x2 totals, thumb-reach primary action --- */
+@media (max-width: 760px) {
+    .summary { grid-template-columns: 1fr 1fr; row-gap: 0; padding-bottom: 14px; margin-bottom: 18px; }
+    .summary .card:nth-child(n) { grid-column: auto; border-left: none; padding: 12px 0 2px; border-top: 1px solid var(--border); }
+    .summary .card:nth-child(1) { grid-column: 1 / -1; border-top: none; padding: 0 0 14px; }
+    .summary .card:nth-child(even) { padding-left: 14px; border-left: 1px solid var(--border); }
+    .summary .card:first-child .value { font-size: 42px; }
+    .card .value { font-size: 19px; }
+    .brand h1 { font-size: 26px; }
+    .app { padding-bottom: calc(100px + env(safe-area-inset-bottom, 0px)); }
+    .top-actions #openTradeBtn { position: fixed; left: 14px; right: 14px; bottom: calc(14px + env(safe-area-inset-bottom, 0px)); width: auto; z-index: 40; min-height: 54px; border-radius: 12px; font-size: 15px; box-shadow: 0 12px 28px -8px rgba(40, 72, 232, .55); }
+    .toast { bottom: calc(82px + env(safe-area-inset-bottom, 0px)); }
+    .week-day { border-radius: 8px; min-height: 88px; }
+    .an-kpi .ak-value { font-size: 20px; }
+    .an-kpi-row { gap: 0 16px; }
+}
