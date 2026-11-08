@@ -13,7 +13,6 @@
     --loss: #CC3A52; --loss-soft: rgba(204, 58, 82, .10);
     --accent: #2848E8; --accent-soft: rgba(40, 72, 232, .09);
     --ink: #0E1B2C; --on-ink: #F4F6FA; --on-ink-dim: #9AA7BC;
-    --rule: rgba(14, 27, 44, .045);
     --shadow: 0 1px 0 rgba(14, 27, 44, .04), 0 10px 28px -14px rgba(14, 27, 44, .22);
     --r: 8px;
     color-scheme: light;
@@ -27,7 +26,6 @@
         --loss: #FF6B81; --loss-soft: rgba(255, 107, 129, .13);
         --accent: #7C94FF; --accent-soft: rgba(124, 148, 255, .13);
         --ink: #1A2742; --on-ink: #F4F6FA; --on-ink-dim: #8FA0BD;
-        --rule: rgba(255, 255, 255, .03);
         --shadow: 0 1px 0 rgba(0, 0, 0, .3), 0 12px 30px -14px rgba(0, 0, 0, .6);
         color-scheme: dark;
     }
@@ -40,7 +38,6 @@
     --loss: #FF6B81; --loss-soft: rgba(255, 107, 129, .13);
     --accent: #7C94FF; --accent-soft: rgba(124, 148, 255, .13);
     --ink: #1A2742; --on-ink: #F4F6FA; --on-ink-dim: #8FA0BD;
-    --rule: rgba(255, 255, 255, .03);
     --shadow: 0 1px 0 rgba(0, 0, 0, .3), 0 12px 30px -14px rgba(0, 0, 0, .6);
     color-scheme: dark;
 }
@@ -55,8 +52,6 @@ html {
 body {
     margin: 0; max-width: 100vw; overflow-x: hidden; color: var(--text);
     background-color: var(--bg);
-    /* faint ledger ruling */
-    background-image: repeating-linear-gradient(to bottom, transparent 0, transparent 31px, var(--rule) 31px, var(--rule) 32px);
     font-family: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     -webkit-font-smoothing: antialiased;
     transition: background-color .25s ease, color .25s ease;
